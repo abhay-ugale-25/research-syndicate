@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic>=2.6.0,<3.0.0
+langchain-core
+langgraph
+langchain-google-genai
+google-generativeai
+tavily-python
+python-dotenv
