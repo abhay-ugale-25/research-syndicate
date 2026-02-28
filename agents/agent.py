@@ -11,10 +11,12 @@ def plan_research(state: ResearchState):
     gen_ai = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, api_key=os.getenv("GOOGLE_API_KEY"))    
     model = gen_ai.with_structured_output(PlannerOutput)
     system_prompt = f"""
-    You are a senior-level data scientist architecting a research sprint. 
+    You are a senior-level data scientist architecting a rigorous research sprint. 
     Your only job is to look at the user's research topic and break it down into 3 to 5 highly specific, academic search queries. Do not answer the user's topic. 
     Do not write a report. 
     Only generate the search terms needed to find the best peer-reviewed papers and technical documentation.
+    CRITICAL RULE: You must design these queries to find peer-reviewed research papers, NOT blogs. 
+    Append terms like "arxiv", "IEEE", "research paper", "abstract", or "DOI" to your queries to force the search engine to return academic literature.
     """
     user_prompt = f"""
     Please generate the search queries for the following topic: {bulletin_board}
@@ -27,7 +29,19 @@ def execute_search(state: ResearchState):
     tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
     all_results = []
     for query in queries:
-        tavily_response = tavily.search(query=query, max_results=5, search_depth='advanced')
+        tavily_response = tavily.search(
+            query=query,
+            max_results=5,
+            search_depth='advanced',
+            include_domains=[
+                "arxiv.org", 
+                "springer.com", 
+                "sciencedirect.com", 
+                "ieeexplore.ieee.org", 
+                "researchgate.net",
+                "nature.com"
+            ]
+        )
         all_results.extend(tavily_response["results"])
     return {"raw_sources": all_results}
 
