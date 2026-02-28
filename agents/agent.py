@@ -81,6 +81,13 @@ def write_report(state: ResearchState):
     You are a expert technical writer.
     Your job is to raw research sources and synthesize them into a comprehensive, well-structured Markdown report based on the user's topic.
     You should include inline citations, using URLs, whenever you state a fact.
+    CRITICAL CITATION RULES:
+    1. You must use inline numbered citations like [1], [2] whenever you state a fact.
+    2. You MUST include a "## References" section at the absolute end of your report.
+    3. In the References section, you must list every number used in the text and pair it with its exact URL from the provided sources. 
+    Format the references like this: 
+    [1] URL
+    [2] URL
     """
     user_prompt= f"""
     topic: {topic},
