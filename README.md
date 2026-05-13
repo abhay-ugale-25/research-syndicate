@@ -1,85 +1,67 @@
-# 🔬 Research Syndicate
+# Research Syndicate
 
-Research Syndicate is a decentralized multi-agent system designed to automate rigorous academic research. Built with LangGraph, FastAPI, and Gemini, it orchestrates specialized AI agents to autonomously investigate complex topics, evaluate source quality, and synthesize fully-cited, peer-reviewed reports.
+If you want to research a highly technical topic, you usually have to dig through dozens of Google search pages, skip past SEO marketing blogs, and manually parse complex whitepapers. It takes hours of manual filtering just to find reliable information.
 
-## 🧠 System Architecture
+Research Syndicate automates that entire workflow. It is a headless, multi-agent system built on LangGraph that acts like a strict team of academic researchers. You give it a topic, and the agents work in a loop to find, verify, and summarize peer-reviewed data into a cited report.
 
-The system utilizes a directed acyclic graph (DAG) to route tasks between isolated micro-workers. It features an intelligent self-correcting loop that forces the system to re-plan if retrieved sources fail to meet academic standards.
+### How the Swarm Works
 
-* **Planner Node (`plan_research`):** Acts as a Senior Data Scientist. Decomposes the overarching topic into 3-5 highly specific, academic search queries designed to find peer-reviewed literature.
-* **Search Node (`execute_search`):** The execution engine. Utilizes the Tavily API to scrape academic domains (arXiv, Springer, IEEE, Nature, etc.) based on the planner's queries.
-* **Judge Node (`judge_sources`):** A strict academic peer-reviewer. Evaluates the retrieved HTML/text against a rigorous rubric, penalizing marketing material and rewarding dense technical documentation. 
-* **Writer Node (`write_report`):** The synthesis engine. Consolidates the approved data into a comprehensive Markdown report, complete with inline numbered citations and a dedicated references section.
+Instead of relying on a single prompt, the architecture uses a cyclical graph of specialized nodes. They check each other's work to prevent hallucinations.
 
-## 🛠️ Tech Stack
+1. **The Planner:** Takes the user's topic and writes highly specific search queries designed to pull from academic databases (like arXiv or IEEE) rather than generic websites.
+2. **The Scraper:** Uses the Tavily API to extract the raw text from those specific sources.
+3. **The Judge (Quality Control):** This node acts as a strict reviewer. It grades the retrieved sources. If it spots marketing fluff or irrelevant data, it fails the search and routes the system back to the Planner to generate better queries.
+4. **The Writer:** Once the Judge approves the sources (score of 0.8 or higher), this final agent synthesizes the raw data into a clean Markdown report with strict inline URL citations.
 
+### The Tech Stack
+
+* **Agent Orchestration:** LangGraph / LangChain
+* **LLM Engine:** Google Gemini 2.5 Flash
+* **Search API:** Tavily
 * **Backend Framework:** FastAPI
-* **Agent Orchestration:** LangGraph & LangChain Core
-* **LLM Engine:** Google Gemini (2.5-Flash)
-* **Search API:** Tavily Client
+* **Deployment:** Docker
 
-## ⚙️ Setup & Installation
+### Hitting the Endpoint
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/abhay-ugale-25/research-syndicate.git
-   cd research-syndicate
-   ```
-
-2. **Set up the environment:**
-   Create a `.env` file in the root directory and add your API keys:
-   ```env
-   GOOGLE_API_KEY=your_gemini_api_key
-   TAVILY_API_KEY=your_tavily_api_key
-   ```
-
-3. **Install dependencies:**
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-
-## 🚀 Usage Guide
-
-You can interact with the Research Syndicate via the terminal or as a REST API.
-
-### Option 1: Command Line Interface (CLI)
-Run the state machine directly in your terminal. It will output the graph execution steps and render the final Markdown report using `rich`.
-
-```bash
-python main.py
-```
-
-### Option 2: REST API (FastAPI)
-Launch the application as a web service.
-
-```bash
-uvicorn api:api --host 0.0.0.0 --port 8000
-```
-**Endpoint:** `POST /research`
+**POST** `/research`
 
 **Payload:**
+
 ```json
 {
-  "topic": "Your research topic here"
+  "topic": "What is the current state of multi-agent reinforcement learning in 2026?"
 }
+
 ```
 
-### Option 3: Docker Deployment
-For isolated execution, you can containerize the application. 
+**Response:**
+
+```json
+{
+  "report": "# Multi-Agent Reinforcement Learning: 2026 Landscape\n\nMulti-agent reinforcement learning (MARL) has seen massive shifts... [1]. \n\n## References\n[1] https://arxiv.org/abs/..."
+}
+
+```
+
+### Getting it Running Locally
+
+The easiest way to spin this up is using Docker.
+
+First, create a `.env` file at the root with your keys:
+
+```env
+GOOGLE_API_KEY=your_gemini_key
+TAVILY_API_KEY=your_tavily_key
+
+```
+
+Then, build and run the container:
 
 ```bash
-# Build the image
 docker build -t research-syndicate .
+docker run -p 8000:8000 --env-file .env research-syndicate
 
-# Run the container
-docker run -d -p 8000:8000 --env-file .env research-syndicate
 ```
 
-## 📂 Project Structure
-
-* `/agents`: Contains the core logic and prompts for individual agent nodes (`agent.py`).
-* `/config`: Defines the strict data schemas (`PlannerOutput`, `JudgeOutput`) and the global `ResearchState` shared memory object (`structure.py`).
-* `/tools`: Houses the orchestration logic, node registration, and conditional routing to execute the LangGraph workflow (`route.py`).
-* `api.py`: FastAPI endpoints.
-* `main.py`: CLI execution script.
+If you prefer to run it bare-metal, just install the `requirements.txt` and run `uvicorn api:api --reload`.
+You can test the agentic loop directly at `http://127.0.0.1:8000/docs`.
