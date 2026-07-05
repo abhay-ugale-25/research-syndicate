@@ -1,67 +1,89 @@
 # Research Syndicate
 
-If you want to research a highly technical topic, you usually have to dig through dozens of Google search pages, skip past SEO marketing blogs, and manually parse complex whitepapers. It takes hours of manual filtering just to find reliable information.
+If you want to research a highly technical topic, you usually end up digging through dozens of search pages, skipping past SEO marketing blogs, and manually parsing whitepapers just to find something reliable. It takes hours of manual filtering to get to a trustworthy answer.
 
-Research Syndicate automates that entire workflow. It is a headless, multi-agent system built on LangGraph that acts like a strict team of academic researchers. You give it a topic, and the agents work in a loop to find, verify, and summarize peer-reviewed data into a cited report.
+Research Syndicate automates that workflow. It's a headless, multi-agent system built on LangGraph that acts like a small team of strict academic researchers. You give it a topic, and a cyclical graph of specialized agents plans queries, retrieves sources, grades them for academic rigor, and only writes a cited report once the sources actually clear a quality bar — regenerating the search itself if they don't.
 
-### How the Swarm Works
+## How the Graph Works
 
-Instead of relying on a single prompt, the architecture uses a cyclical graph of specialized nodes. They check each other's work to prevent hallucinations.
+Instead of a single prompt trying to do everything at once, the system is a `StateGraph` with four nodes and one self-correcting loop:
 
-1. **The Planner:** Takes the user's topic and writes highly specific search queries designed to pull from academic databases (like arXiv or IEEE) rather than generic websites.
-2. **The Scraper:** Uses the Tavily API to extract the raw text from those specific sources.
-3. **The Judge (Quality Control):** This node acts as a strict reviewer. It grades the retrieved sources. If it spots marketing fluff or irrelevant data, it fails the search and routes the system back to the Planner to generate better queries.
-4. **The Writer:** Once the Judge approves the sources (score of 0.8 or higher), this final agent synthesizes the raw data into a clean Markdown report with strict inline URL citations.
+```mermaid
+graph TD
+    START([START]) --> Planner[Planner Node]
+    Planner --> Search[Search Node]
+    Search --> Judge[Judge Node]
+    Judge -->|score < 0.8| Planner
+    Judge -->|score >= 0.8| Writer[Writer Node]
+    Writer --> END([END])
+```
 
-### The Tech Stack
+**1. Planner** — Takes the raw topic and calls Gemini 2.5 Flash with a structured output schema (`PlannerOutput`) to produce 3–5 highly specific academic search queries, deliberately biased toward arXiv, IEEE, and DOI-style phrasing instead of generic web search terms.
 
-* **Agent Orchestration:** LangGraph / LangChain
-* **LLM Engine:** Google Gemini 2.5 Flash
-* **Search API:** Tavily
-* **Backend Framework:** FastAPI
-* **Deployment:** Docker
+**2. Search** — Runs every query through the Tavily API, restricted to a fixed allowlist of academic domains (`arxiv.org`, `ieeexplore.ieee.org`, `sciencedirect.com`, `nature.com`, `springer.com`, `researchgate.net`). Results from all queries accumulate into `raw_sources` using a LangGraph reducer (`Annotated[List[dict], operator.add]`), so nothing gets overwritten across the loop.
 
-### Hitting the Endpoint
+**3. Judge** — Acts as a strict peer reviewer. It scores the accumulated sources from 0.0–1.0 on academic rigor via a second structured-output call (`JudgeOutput`), deducting for marketing fluff or outdated material and rewarding peer-reviewed, technically dense content.
+
+**4. Conditional routing** — If `quality_score >= 0.8`, the graph proceeds to the Writer. If not, it routes **back to the Planner** to generate different queries and try again — the actual self-correction mechanism, not just a retry with the same input.
+
+**5. Writer** — Only runs once sources are approved. Synthesizes the raw source text into a Markdown report with strict inline numbered citations (`[1]`, `[2]`) and a matching `## References` section mapping every citation to its source URL.
+
+The loop is bounded by `recursion_limit: 5` at the graph-execution level, guaranteeing the system terminates even if sources never clear the quality bar.
+
+## Tech Stack
+
+| Layer | Choice |
+|---|---|
+| Agent orchestration | LangGraph (`StateGraph`, conditional edges, reducers) |
+| LLM | Google Gemini 2.5 Flash, structured output via Pydantic schemas |
+| Search | Tavily API, domain-restricted to academic sources |
+| Backend | FastAPI |
+| Deployment | Docker |
+
+## API
 
 **POST** `/research`
 
-**Payload:**
-
+**Request:**
 ```json
 {
   "topic": "What is the current state of multi-agent reinforcement learning in 2026?"
 }
-
 ```
 
 **Response:**
-
 ```json
 {
-  "report": "# Multi-Agent Reinforcement Learning: 2026 Landscape\n\nMulti-agent reinforcement learning (MARL) has seen massive shifts... [1]. \n\n## References\n[1] https://arxiv.org/abs/..."
+  "report": "# Multi-Agent Reinforcement Learning: 2026 Landscape\n\nMulti-agent reinforcement learning (MARL) has seen massive shifts... [1]\n\n## References\n[1] https://arxiv.org/abs/..."
 }
-
 ```
 
-### Getting it Running Locally
+## Running Locally
 
-The easiest way to spin this up is using Docker.
+**With Docker:**
 
-First, create a `.env` file at the root with your keys:
-
+Create a `.env` file at the project root:
 ```env
 GOOGLE_API_KEY=your_gemini_key
 TAVILY_API_KEY=your_tavily_key
-
 ```
 
-Then, build and run the container:
-
+Then:
 ```bash
 docker build -t research-syndicate .
 docker run -p 8000:8000 --env-file .env research-syndicate
-
 ```
 
-If you prefer to run it bare-metal, just install the `requirements.txt` and run `uvicorn api:api --reload`.
-You can test the agentic loop directly at `http://127.0.0.1:8000/docs`.
+**Bare metal:**
+```bash
+pip install -r requirements.txt
+uvicorn api:api --reload
+```
+
+Interactive API docs and a way to test the full agentic loop directly: `http://127.0.0.1:8000/docs`
+
+## Design Notes
+
+- **Structured output over text parsing** — both the Planner and Judge use `with_structured_output()` against Pydantic schemas (`PlannerOutput`, `JudgeOutput`) rather than parsing free-text LLM responses, so a malformed score or query list fails loudly instead of silently corrupting downstream state.
+- **State accumulation, not overwrite** — `raw_sources` uses an explicit reducer so sources from every retry loop accumulate rather than replacing each other, meaning a second-pass search can build on the first pass instead of discarding it.
+- **Bounded self-correction** — the replan loop is real (it changes the query strategy, not just re-runs the same search) but is capped by `recursion_limit`, so a stubborn topic fails safely instead of looping indefinitely.
