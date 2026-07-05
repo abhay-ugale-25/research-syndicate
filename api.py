@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from dotenv import load_dotenv
+load_dotenv()  
 from tools.route import app as graph_app
 
 class research_query(BaseModel):
