@@ -11,7 +11,7 @@ api = FastAPI(
 )
 
 @api.post("/research")
-def start_app(request: research_query):
+async def start_app(request: research_query):
     inital_state = {
         'topic': request.topic,
         'search_queries': [],
@@ -22,6 +22,6 @@ def start_app(request: research_query):
         'judge_feedback': '' 
     }
 
-    research = graph_app.invoke(inital_state, config={"recursion_limit": 5})
+    research = await graph_app.invoke(inital_state, config={"recursion_limit": 5})
 
     return {"report": research['final_report']}
