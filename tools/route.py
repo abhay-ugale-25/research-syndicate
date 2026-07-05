@@ -17,7 +17,7 @@ def routing_research(state: ResearchState):
 flow.add_edge(START, "planner_node")
 flow.add_edge("planner_node", "search_node")
 flow.add_edge("search_node", "judge_node")
-flow.add_conditional_edges("judge_node", routing_research)
+flow.add_conditional_edges("judge_node", routing_research, {"writer_node": "writer_node", "planner_node": "planner_node"})
 flow.add_edge("writer_node", END)
 
 app = flow.compile()
