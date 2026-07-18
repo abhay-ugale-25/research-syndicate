@@ -81,9 +81,3 @@ uvicorn api:api --reload
 ```
 
 Interactive API docs and a way to test the full agentic loop directly: `http://127.0.0.1:8000/docs`
-
-## Design Notes
-
-- **Structured output over text parsing** — both the Planner and Judge use `with_structured_output()` against Pydantic schemas (`PlannerOutput`, `JudgeOutput`) rather than parsing free-text LLM responses, so a malformed score or query list fails loudly instead of silently corrupting downstream state.
-- **State accumulation, not overwrite** — `raw_sources` uses an explicit reducer so sources from every retry loop accumulate rather than replacing each other, meaning a second-pass search can build on the first pass instead of discarding it.
-- **Bounded self-correction** — the replan loop is real (it changes the query strategy, not just re-runs the same search) but is capped by `recursion_limit`, so a stubborn topic fails safely instead of looping indefinitely.
