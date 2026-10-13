@@ -6,29 +6,29 @@ Research Syndicate automates that workflow. It's a headless, multi-agent system 
 
 ## How the Graph Works
 
-Instead of a single prompt trying to do everything at once, the system is a `StateGraph` with four nodes and one self-correcting loop:
+Instead of a single prompt trying to do everything at once, the system is an asynchronous `StateGraph` with four nodes, a self-correcting loop, and a circuit breaker:
 
 ```mermaid
 graph TD
     START([START]) --> Planner[Planner Node]
     Planner --> Search[Search Node]
     Search --> Judge[Judge Node]
-    Judge -->|score < 0.8| Planner
-    Judge -->|score >= 0.8| Writer[Writer Node]
+    Judge -->|"score < 0.8 & iter < 3"| Planner
+    Judge -->|"score >= 0.8 OR iter >= 3"| Writer[Writer Node]
     Writer --> END([END])
 ```
 
-**1. Planner** — Takes the raw topic and calls Gemini 2.5 Flash with a structured output schema (`PlannerOutput`) to produce 3–5 highly specific academic search queries, deliberately biased toward arXiv, IEEE, and DOI-style phrasing instead of generic web search terms.
+**1. Planner** — Takes the raw topic and calls Gemini 2.5 Flash with a structured output schema (`PlannerOutput`) to produce 3–5 highly specific academic search queries, deliberately biased toward arXiv, IEEE, and DOI-style phrasing. On retries, it ingests previous `judge_feedback` to dynamically refine query strategy.
 
-**2. Search** — Runs every query through the Tavily API, restricted to a fixed allowlist of academic domains (`arxiv.org`, `ieeexplore.ieee.org`, `sciencedirect.com`, `nature.com`, `springer.com`, `researchgate.net`). Results from all queries accumulate into `raw_sources` using a LangGraph reducer (`Annotated[List[dict], operator.add]`), so nothing gets overwritten across the loop.
+**2. Search** — Runs all queries concurrently via `AsyncTavilyClient` using `asyncio.gather`, restricted to a fixed allowlist of academic domains (`arxiv.org`, `ieeexplore.ieee.org`, `sciencedirect.com`, `nature.com`, `springer.com`, `researchgate.net`). Results accumulate into `raw_sources` using a LangGraph reducer (`Annotated[List[dict], operator.add]`).
 
-**3. Judge** — Acts as a strict peer reviewer. It scores the accumulated sources from 0.0–1.0 on academic rigor via a second structured-output call (`JudgeOutput`), deducting for marketing fluff or outdated material and rewarding peer-reviewed, technically dense content.
+**3. Judge** — Acts as a strict peer reviewer. Evaluates accumulated sources on academic rigor via structured output (`JudgeOutput`), enforcing scores between `0.0` and `1.0`. Generates actionable `feedback` to steer query refinement and increments `iteration_count`.
 
-**4. Conditional routing** — If `quality_score >= 0.8`, the graph proceeds to the Writer. If not, it routes **back to the Planner** to generate different queries and try again — the actual self-correction mechanism, not just a retry with the same input.
+**4. Conditional routing & Circuit Breaker** — If `quality_score >= 0.8`, proceeds to the Writer. If not and `iteration_count < 3`, routes **back to the Planner** with constructive critique for autonomous self-correction. If `iteration_count >= 3`, a production circuit breaker trips and routes directly to the Writer to prevent infinite loops.
 
-**5. Writer** — Only runs once sources are approved. Synthesizes the raw source text into a Markdown report with strict inline numbered citations (`[1]`, `[2]`) and a matching `## References` section mapping every citation to its source URL.
+**5. Writer** — Synthesizes approved sources into a comprehensive Markdown report with strict inline numbered citations (`[1]`, `[2]`) and a matching `## References` section mapping every citation to its source URL.
 
-The loop is bounded by `recursion_limit: 5` at the graph-execution level, guaranteeing the system terminates even if sources never clear the quality bar.
+The workflow operates fully asynchronously with non-blocking `.ainvoke()` calls and an expanded recursion limit to guarantee completion.
 
 ## Tech Stack
 
@@ -36,8 +36,9 @@ The loop is bounded by `recursion_limit: 5` at the graph-execution level, guaran
 |---|---|
 | Agent orchestration | LangGraph (`StateGraph`, conditional edges, reducers) |
 | LLM | Google Gemini 2.5 Flash, structured output via Pydantic schemas |
-| Search | Tavily API, domain-restricted to academic sources |
-| Backend | FastAPI |
+| Search | Async Tavily API (`AsyncTavilyClient`), domain-restricted to academic sources |
+| Backend API | FastAPI, asynchronous endpoints |
+| Frontend UI | Streamlit |
 | Deployment | Docker |
 
 ## API
@@ -50,11 +51,16 @@ The loop is bounded by `recursion_limit: 5` at the graph-execution level, guaran
   "topic": "What is the current state of multi-agent reinforcement learning in 2026?"
 }
 ```
+*(Input is validated via Pydantic v2 to trim whitespace and require between 3 and 500 characters).*
 
 **Response:**
 ```json
 {
-  "report": "# Multi-Agent Reinforcement Learning: 2026 Landscape\n\nMulti-agent reinforcement learning (MARL) has seen massive shifts... [1]\n\n## References\n[1] https://arxiv.org/abs/..."
+  "report": "# Multi-Agent Reinforcement Learning: 2026 Landscape\n\nMulti-agent reinforcement learning (MARL) has seen massive shifts... [1]\n\n## References\n[1] https://arxiv.org/abs/...",
+  "total_sources": 10,
+  "execution_time_seconds": 4.51,
+  "quality_score": 0.88,
+  "iteration_count": 1
 }
 ```
 
@@ -81,3 +87,10 @@ uvicorn api:api --reload
 ```
 
 Interactive API docs and a way to test the full agentic loop directly: `http://127.0.0.1:8000/docs`
+
+**Streamlit Web Interface:**
+```bash
+pip install streamlit requests
+streamlit run app.py
+```
+*(Configurable via `API_URL` environment variable; defaults to `http://localhost:8000/research`).*

@@ -1,9 +1,9 @@
 # 🤖 Agent Logic & Node Execution (`agent.py`)
 
-**Purpose:** This file contains the individual micro-workers (nodes) that execute the cognitive and physical tasks of the research syndicate. Each function represents an isolated capability within the LangGraph workflow.
+**Purpose:** This file contains the individual micro-workers (nodes) that execute the cognitive and physical tasks of the research syndicate. All node functions are implemented asynchronously (`async def`) using `await model.ainvoke()` for high-throughput, non-blocking execution within the LangGraph workflow.
 
 **Key Components:**
-* `plan_research`: The reasoning engine. Acts as a Senior Data Scientist to decompose the user's topic into highly targeted, academic search queries.
-* `execute_search`: The execution tool. Connects to the Tavily API to autonomously scrape the web based on the Planner's queries, utilizing advanced search depth to retrieve technical documentation.
-* `judge_sources`: The evaluation engine. Acts as a strict academic peer-reviewer to grade the retrieved sources against a rigorous rubric, ensuring only high-quality data passes to the final stage.
-* `write_report`: The synthesis engine. Consolidates the approved research data into a comprehensive, fully-cited Markdown report.
+* `plan_research`: The reasoning engine. Decomposes the user's topic into 3–5 targeted academic search queries. On retry cycles, it dynamically incorporates previous `judge_feedback` into the prompt to autonomously refine search strategy.
+* `execute_search`: The execution tool. Uses `AsyncTavilyClient` to concurrently query Tavily with `asyncio.gather`, restricting searches to an academic domain whitelist (`arxiv.org`, `ieeexplore.ieee.org`, `nature.com`, `springer.com`, `sciencedirect.com`, `researchgate.net`).
+* `judge_sources`: The evaluation engine. Grades accumulated sources against academic rigor rubrics, increments `iteration_count`, and generates actionable `feedback` to steer query refinement if quality falls below threshold.
+* `write_report`: The synthesis engine. Consolidates approved research data into a comprehensive Markdown report with strict inline numbered citations (`[1]`, `[2]`) and a terminal `## References` section mapping numbers to source URLs.
