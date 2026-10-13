@@ -8,11 +8,14 @@ flow.add_node("search_node", execute_search)
 flow.add_node("judge_node", judge_sources)
 flow.add_node("writer_node", write_report)
 
+MAX_ITERATIONS = 3
+
 def routing_research(state: ResearchState):
     if state["quality_score"] >= 0.8:
         return "writer_node"
-    else:
-        return "planner_node"
+    if state.get("iteration_count", 0) >= MAX_ITERATIONS:
+        return "writer_node"
+    return "planner_node"
 
 flow.add_edge(START, "planner_node")
 flow.add_edge("planner_node", "search_node")

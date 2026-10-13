@@ -15,4 +15,11 @@ class PlannerOutput(BaseModel):
     search_queries: List[str] = Field(description="A list of 3 to 5 highly specific, academic search engine queries based on the user's topic.")
 
 class JudgeOutput(BaseModel):
-    quality_score: float = Field(description="This is a score between 0.0 to 1.0 evaluating academic rigor of provided sources.")
+    quality_score: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="This is a score between 0.0 to 1.0 evaluating academic rigor of provided sources."
+    )
+    feedback: str = Field(
+        description="Actionable critique explaining the quality score and guidance for query refinement or missing technical areas."
+    )

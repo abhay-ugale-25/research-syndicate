@@ -1,13 +1,15 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
-from tavily import TavilyClient
-from config.structure import ResearchState, PlannerOutput, JudgeOutput
+import asyncio
 import os
 from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
+from tavily import AsyncTavilyClient
+from config.structure import ResearchState, PlannerOutput, JudgeOutput
 
 load_dotenv()
 
-def plan_research(state: ResearchState):
-    bulletin_board = state["topic"]
+async def plan_research(state: ResearchState):
+    topic = state["topic"]
+    judge_feedback = state.get("judge_feedback", "")
     gen_ai = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0, api_key=os.getenv("GOOGLE_API_KEY"))    
     model = gen_ai.with_structured_output(PlannerOutput)
     system_prompt = f"""
@@ -19,17 +21,23 @@ def plan_research(state: ResearchState):
     Append terms like "arxiv", "IEEE", "research paper", "abstract", or "DOI" to your queries to force the search engine to return academic literature.
     """
     user_prompt = f"""
-    Please generate the search queries for the following topic: {bulletin_board}
+    Please generate the search queries for the following topic: {topic}
     """
-    response = model.invoke([("system", system_prompt), ("user", user_prompt)])
+    if judge_feedback:
+        user_prompt += f"""
+    
+    PREVIOUS FEEDBACK FROM JUDGE (Address these shortcomings in the new search queries):
+    {judge_feedback}
+    """
+    response = await model.ainvoke([("system", system_prompt), ("user", user_prompt)])
     return {"search_queries": response.search_queries}
 
-def execute_search(state: ResearchState):
+async def execute_search(state: ResearchState):
     queries = state["search_queries"]
-    tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-    all_results = []
-    for query in queries:
-        tavily_response = tavily.search(
+    tavily = AsyncTavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+    
+    async def search_single_query(query: str):
+        tavily_response = await tavily.search(
             query=query,
             max_results=5,
             search_depth='advanced',
@@ -42,12 +50,16 @@ def execute_search(state: ResearchState):
                 "nature.com"
             ]
         )
-        all_results.extend(tavily_response["results"])
+        return tavily_response.get("results", [])
+
+    results_lists = await asyncio.gather(*(search_single_query(query) for query in queries))
+    all_results = [result for results in results_lists for result in results]
     return {"raw_sources": all_results}
 
-def judge_sources(state: ResearchState):
+async def judge_sources(state: ResearchState):
     topic = state["topic"]
     sources = state["raw_sources"]
+    current_iteration = state.get("iteration_count", 0) + 1
     formatted_sources = [f"URL: {source['url']}\nCONTENT: {source['content']}" for source in sources]
     gen_ai = ChatGoogleGenerativeAI(model='gemini-2.5-flash', temperature=0, api_key=os.getenv("GOOGLE_API_KEY"))
     model = gen_ai.with_structured_output(JudgeOutput)
@@ -69,10 +81,14 @@ def judge_sources(state: ResearchState):
     topic: {topic},
     sources: {formatted_sources}
     """
-    response = model.invoke([("system", system_prompt), ("user", user_prompt)])
-    return {"quality_score": response.quality_score}
+    response = await model.ainvoke([("system", system_prompt), ("user", user_prompt)])
+    return {
+        "quality_score": response.quality_score,
+        "judge_feedback": response.feedback,
+        "iteration_count": current_iteration
+    }
 
-def write_report(state: ResearchState):
+async def write_report(state: ResearchState):
     topic = state["topic"]
     sources = state["raw_sources"]
     formatted_sources = [f"URL: {source['url']}\nCONTENT: {source['content']}" for source in sources]
@@ -93,5 +109,5 @@ def write_report(state: ResearchState):
     topic: {topic},
     sources: {formatted_sources}
     """
-    response = model.invoke([("system", system_prompt), ("user", user_prompt)])
+    response = await model.ainvoke([("system", system_prompt), ("user", user_prompt)])
     return {"final_report": response.content}
