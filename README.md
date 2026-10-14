@@ -39,6 +39,7 @@ The workflow operates fully asynchronously with non-blocking `.ainvoke()` calls 
 | Search | Async Tavily API (`AsyncTavilyClient`), domain-restricted to academic sources |
 | Backend API | FastAPI, asynchronous endpoints |
 | Frontend UI | Streamlit |
+| Testing | pytest, pytest-mock, FastAPI TestClient |
 | Deployment | Docker |
 
 ## API
@@ -94,3 +95,15 @@ pip install streamlit requests
 streamlit run app.py
 ```
 *(Configurable via `API_URL` environment variable; defaults to `http://localhost:8000/research`).*
+
+## Testing
+
+The project includes an automated test suite powered by `pytest` and `pytest-mock` covering API payload validation, response model serialization, conditional routing, and circuit breaker activation:
+
+```bash
+# Run the complete test suite
+pytest -v
+```
+
+See [tests/README.md](tests/README.md) for detailed module coverage and mocking architecture.
+

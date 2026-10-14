@@ -8,3 +8,5 @@ google-generativeai
 tavily-python
 python-dotenv
 langsmith
+pytest
+pytest-mock
